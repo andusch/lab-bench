@@ -1,22 +1,9 @@
 import { createSignal, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import SeriesPlot from "./SeriesPlot";
+import type { Series } from "./series";
 import "./App.css";
-
-type Point = {
-  x: number;
-  dx: number;
-  y: number;
-  dy: number;
-};
-
-type Series = {
-  x_name: string;
-  dx_name: string;
-  y_name: string;
-  dy_name: string;
-  points: Point[];
-};
 
 function App() {
   const [series, setSeries] = createSignal<Series | null>(null);
@@ -64,6 +51,7 @@ function App() {
         {(loaded) => (
           <section aria-label="Loaded series">
             <p class="count">{loaded().points.length} points</p>
+            <SeriesPlot series={loaded()} />
             <dl>
               <div>
                 <dt>x</dt>
