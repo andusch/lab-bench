@@ -28,7 +28,7 @@ Preconditions:
 
 ## Gotchas
 
-- The buttons are on the desk after a CSV loads. Pressing `Fit degree 1` currently leaves the page without a degree, a coefficient, a standard error, or R^2. No alert appears on that click. Stop and report the journey failed at the proof step. Do not treat the quiet click as a pass.
-- A browser tab's Fit degree button is not this journey.
+- A browser tab's Fit degree button is not this journey. That tab has no file dialog and does not run the fit.
+- Opening another CSV clears the shown fit. Capture the Hooke's law proof before the capacitor open.
 - Degree 4 is not a button. This journey does not invent a way to request it.
 - The Hooke's law slope check is the on-screen number. A unit test of the slope is not the proof.
