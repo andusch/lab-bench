@@ -29,7 +29,7 @@ You can plot `samples/capacitor-discharge.csv` and fit a polynomial through it. 
 
 ## Stack
 
-The stack is Tauri, Rust, and SolidJS, the same idea as AQUA. The repository has no application code.
+The stack is Tauri, Rust, and SolidJS.
 
 ## License
 
