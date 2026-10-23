@@ -9,6 +9,19 @@ function App() {
   const [series, setSeries] = createSignal<Series | null>(null);
   const [error, setError] = createSignal("");
   const [opening, setOpening] = createSignal(false);
+  const [fitting, setFitting] = createSignal(false);
+
+  async function fitDegree(degree: 1 | 2 | 3) {
+    setFitting(true);
+    setError("");
+    try {
+      await invoke("fit_series", { degree });
+    } catch (err) {
+      setError(typeof err === "string" ? err : "The fit did not run.");
+    } finally {
+      setFitting(false);
+    }
+  }
 
   async function openCsv() {
     setOpening(true);
@@ -51,6 +64,20 @@ function App() {
         {(loaded) => (
           <section aria-label="Loaded series">
             <p class="count">{loaded().points.length} points</p>
+            <div class="fit-actions" role="group" aria-label="Polynomial degree">
+              <For each={[1, 2, 3] as const}>
+                {(degree) => (
+                  <button
+                    type="button"
+                    class="secondary"
+                    onClick={() => void fitDegree(degree)}
+                    disabled={fitting()}
+                  >
+                    Fit degree {degree}
+                  </button>
+                )}
+              </For>
+            </div>
             <SeriesPlot series={loaded()} />
             <dl>
               <div>

@@ -4,6 +4,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+mod fit;
+
+pub use fit::{Fit, FitError};
+
 /// One measured point. `x` is independent, `y` is dependent, and `dx` and `dy`
 /// are the uncertainties on those values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,21 +76,38 @@ impl From<csv::Error> for LoadError {
     }
 }
 
-/// The desk holds at most one series. A file that is not four numeric columns
-/// does not become that series.
+/// The desk holds at most one series and the polynomial fit of that series.
+/// A file that is not four numeric columns does not become that series.
 #[derive(Debug, Default)]
 pub struct Desk {
     series: Option<Series>,
+    fit: Option<Fit>,
 }
 
 impl Desk {
     pub fn new() -> Self {
-        Self { series: None }
+        Self {
+            series: None,
+            fit: None,
+        }
     }
 
     pub fn open_csv(&mut self, path: &Path) -> Result<Series, LoadError> {
-        self.series = Some(read_series(path)?);
-        Ok(self.series.clone().expect("series was just stored"))
+        let series = read_series(path)?;
+        self.series = Some(series.clone());
+        self.fit = None;
+        Ok(series)
+    }
+
+    /// Fit the loaded series. Degrees other than 1, 2, or 3 leave the current fit in place.
+    pub fn fit_polynomial(&mut self, degree: u8) -> Result<Fit, FitError> {
+        if !matches!(degree, 1 | 2 | 3) {
+            return Err(FitError::Degree);
+        }
+        let series = self.series.as_ref().ok_or(FitError::NoSeries)?;
+        let fit = fit::fit_series(series, degree)?;
+        self.fit = Some(fit);
+        Ok(self.fit.clone().expect("fit was just stored"))
     }
 }
 

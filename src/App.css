@@ -41,6 +41,18 @@ button:disabled {
   opacity: 0.6;
 }
 
+button.secondary {
+  background: #fff;
+  color: #1b1e23;
+}
+
+.fit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
 .error {
   color: #8a1f1f;
 }
