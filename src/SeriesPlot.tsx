@@ -1,11 +1,13 @@
-import { createMemo, For } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { plotSeries } from "./plot";
-import type { Series } from "./series";
+import type { Fit, Series } from "./series";
 
-export default function SeriesPlot(props: { series: Series }) {
-  const plot = createMemo(() => plotSeries(props.series));
-  const label = () =>
-    `${props.series.points.length} points of ${props.series.y_name} against ${props.series.x_name}, with uncertainties on both axes`;
+export default function SeriesPlot(props: { series: Series; fit?: Fit | null }) {
+  const plot = createMemo(() => plotSeries(props.series, props.fit));
+  const label = () => {
+    const base = `${props.series.points.length} points of ${props.series.y_name} against ${props.series.x_name}, with uncertainties on both axes`;
+    return props.fit ? `${base}, with a degree ${props.fit.degree} fit` : base;
+  };
 
   return (
     <svg
@@ -88,6 +90,11 @@ export default function SeriesPlot(props: { series: Series }) {
       >
         {plot().yLabel}
       </text>
+      <Show when={plot().curve}>
+        {(curve) => (
+          <path data-fit d={curve()} fill="none" stroke="#9a3412" stroke-width="2" />
+        )}
+      </Show>
       <For each={plot().points}>
         {(point) => (
           <g>

@@ -67,6 +67,19 @@ button.secondary {
   font-variant-numeric: tabular-nums;
 }
 
+.fit-summary {
+  margin: 0 0 1rem;
+}
+
+.fit-summary p {
+  margin: 0 0 0.5rem;
+  font-weight: 650;
+}
+
+.fit-summary dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .plot {
   display: block;
   width: 100%;

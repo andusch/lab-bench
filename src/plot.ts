@@ -1,4 +1,4 @@
-import type { Series } from "./series";
+import type { Fit, Series } from "./series";
 
 export const PLOT_WIDTH = 760;
 export const PLOT_HEIGHT = 500;
@@ -36,17 +36,19 @@ export type Plot = {
   xTicks: PlotTick[];
   yTicks: PlotTick[];
   points: PlotPoint[];
+  curve: string | null;
   axis: { left: number; right: number; top: number; bottom: number };
 };
 
-export function plotSeries(series: Series): Plot {
+export function plotSeries(series: Series, fit?: Fit | null): Plot {
   const xDomain = paddedDomain(
     series.points.map((point) => point.x),
     series.points.map((point) => point.dx),
   );
+  const curveSamples = fit ? samplePolynomial(fit.coefficients, series.points.map((point) => point.x)) : [];
   const yDomain = paddedDomain(
-    series.points.map((point) => point.y),
-    series.points.map((point) => point.dy),
+    series.points.map((point) => point.y).concat(curveSamples.map((sample) => sample.y)),
+    series.points.map((point) => point.dy).concat(curveSamples.map(() => 0)),
   );
   const plotWidth = PLOT_WIDTH - PAD.left - PAD.right;
   const plotHeight = PLOT_HEIGHT - PAD.top - PAD.bottom;
@@ -92,8 +94,49 @@ export function plotSeries(series: Series): Plot {
       y2: yScale(point.y + point.dy),
       cap: CAP,
     })),
+    curve:
+      curveSamples.length < 2
+        ? null
+        : curveSamples
+            .map((sample, index) => {
+              const command = index === 0 ? "M" : "L";
+              return `${command}${xScale(sample.x).toFixed(2)} ${yScale(sample.y).toFixed(2)}`;
+            })
+            .join(" "),
     axis,
   };
+}
+
+function samplePolynomial(coefficients: number[], xs: number[]): { x: number; y: number }[] {
+  if (coefficients.length === 0 || xs.length === 0) {
+    return [];
+  }
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  for (const x of xs) {
+    if (!Number.isFinite(x)) {
+      continue;
+    }
+    xMin = Math.min(xMin, x);
+    xMax = Math.max(xMax, x);
+  }
+  if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || xMin === xMax) {
+    return [];
+  }
+  const samples = 64;
+  const points: { x: number; y: number }[] = [];
+  for (let index = 0; index < samples; index++) {
+    const x = xMin + ((xMax - xMin) * index) / (samples - 1);
+    const y = evaluate(coefficients, x);
+    if (Number.isFinite(y)) {
+      points.push({ x, y });
+    }
+  }
+  return points;
+}
+
+function evaluate(coefficients: number[], x: number): number {
+  return coefficients.reduceRight((value, coefficient) => value * x + coefficient, 0);
 }
 
 function paddedDomain(values: number[], errors: number[]): { min: number; max: number } {

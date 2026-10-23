@@ -2,11 +2,16 @@ import { createSignal, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import SeriesPlot from "./SeriesPlot";
-import type { Series } from "./series";
+import type { Fit, Series } from "./series";
 import "./App.css";
+
+function hasTauriBridge() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 function App() {
   const [series, setSeries] = createSignal<Series | null>(null);
+  const [fit, setFit] = createSignal<Fit | null>(null);
   const [error, setError] = createSignal("");
   const [opening, setOpening] = createSignal(false);
   const [fitting, setFitting] = createSignal(false);
@@ -14,8 +19,14 @@ function App() {
   async function fitDegree(degree: 1 | 2 | 3) {
     setFitting(true);
     setError("");
+    if (!hasTauriBridge()) {
+      setError("Polynomial fits run in the LabBench window. This browser tab cannot call the fit.");
+      setFitting(false);
+      return;
+    }
     try {
-      await invoke("fit_series", { degree });
+      const fit = await invoke<Fit>("fit_series", { degree });
+      setFit(fit);
     } catch (err) {
       setError(typeof err === "string" ? err : "The fit did not run.");
     } finally {
@@ -26,6 +37,11 @@ function App() {
   async function openCsv() {
     setOpening(true);
     setError("");
+    if (!hasTauriBridge()) {
+      setError("Open CSV runs in the LabBench window. This browser tab has no file dialog.");
+      setOpening(false);
+      return;
+    }
     try {
       const selected = await open({
         title: "Open CSV",
@@ -37,6 +53,7 @@ function App() {
         return;
       }
       const loaded = await invoke<Series>("open_csv", { path: selected });
+      setFit(null);
       setSeries(loaded);
     } catch (err) {
       setError(typeof err === "string" ? err : "The file did not load.");
@@ -78,7 +95,33 @@ function App() {
                 )}
               </For>
             </div>
-            <SeriesPlot series={loaded()} />
+            <Show when={fit()}>
+              {(current) => (
+                <div class="fit-summary">
+                  <p>
+                    Degree {current().degree}
+                  </p>
+                  <dl>
+                    <For each={current().coefficients}>
+                      {(coefficient, index) => (
+                        <div>
+                          <dt>{termName(index(), current().degree)}</dt>
+                          <dd>
+                            {formatStat(coefficient)}, standard error{" "}
+                            {formatStat(current().standard_errors[index()])}
+                          </dd>
+                        </div>
+                      )}
+                    </For>
+                    <div>
+                      <dt>R^2</dt>
+                      <dd>{formatStat(current().r_squared)}</dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
+            </Show>
+            <SeriesPlot series={loaded()} fit={fit()} />
             <dl>
               <div>
                 <dt>x</dt>
@@ -124,6 +167,26 @@ function App() {
       </Show>
     </main>
   );
+}
+
+function termName(index: number, degree: number): string {
+  if (index === 0) {
+    return "constant";
+  }
+  if (index === 1 && degree === 1) {
+    return "slope";
+  }
+  if (index === 1) {
+    return "x";
+  }
+  return `x^${index}`;
+}
+
+function formatStat(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "not a number";
+  }
+  return String(Number(value.toPrecision(6)));
 }
 
 export default App;
