@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Launch, check, and stop one LabBench verification instance.
+
+The desk keeps its series in memory. This script does not seed data and it
+does not delete proof artifacts.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+SKILL_DIR = Path(__file__).resolve().parent.parent
+ROOT = SKILL_DIR.parents[2]
+RUN_DIR = SKILL_DIR / "run"
+STATE_PATH = RUN_DIR / "state.json"
+LOG_PATH = RUN_DIR / "dev.log"
+ARTIFACTS = SKILL_DIR / "artifacts"
+URL = "http://localhost:1420/"
+READY_TIMEOUT_S = 120
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def main() -> None:
+    if len(sys.argv) != 2 or sys.argv[1] not in {"launch", "doctor", "cleanup"}:
+        fail("usage: verify-lab-bench launch|doctor|cleanup", code=2)
+    command = sys.argv[1]
+    if command == "launch":
+        launch()
+    elif command == "doctor":
+        doctor()
+    else:
+        cleanup()
+
+
+def launch() -> None:
+    if not shutil.which("pnpm"):
+        fail("pnpm is not on PATH")
+    listeners = port_listeners()
+    if listeners:
+        fail(
+            "port 1420 is already in use by pid "
+            + ", ".join(str(item["pid"]) for item in listeners)
+            + ". Refusing to start a second desk."
+        )
+    existing = lab_bench_processes()
+    if existing:
+        fail(
+            "lab-bench is already running (pid "
+            + ", ".join(str(item["pid"]) for item in existing)
+            + "). Refusing to start another instance."
+        )
+    if STATE_PATH.exists():
+        stale = read_state()
+        session = stale.get("session_pid")
+        if isinstance(session, int) and alive(session):
+            fail(f"verification session {session} is already running. Run cleanup before launch.")
+        STATE_PATH.unlink()
+
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    log = LOG_PATH.open("w", encoding="utf-8")
+    env = os.environ.copy()
+    env.pop("CARGO_TARGET_DIR", None)
+    session = subprocess.Popen(
+        ["pnpm", "tauri", "dev"],
+        cwd=ROOT,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    state = {"session_pid": session.pid, "lab_bench_pid": None, "vite_pid": None, "binary": None}
+    STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+
+    deadline = time.time() + READY_TIMEOUT_S
+    failure = "timed out before the desk was ready"
+    while time.time() < deadline:
+        if session.poll() is not None:
+            failure = f"pnpm tauri dev exited {session.returncode} before the desk was ready"
+            break
+        text = strip_ansi(LOG_PATH.read_text(encoding="utf-8", errors="replace"))
+        binary = running_binary(text)
+        benches = lab_bench_processes()
+        title, title_error = fetch_title()
+        listeners = port_listeners()
+        if binary and benches and title == "LabBench" and listeners:
+            owned = [
+                item
+                for item in benches
+                if is_descendant(item["pid"], session.pid) or resolved_executable(item["pid"]) == binary
+            ]
+            vite_descendants = [
+                item for item in listeners if is_descendant(item["pid"], session.pid)
+            ]
+            if owned and vite_descendants and binary.startswith(str(ROOT) + os.sep):
+                state = {
+                    "session_pid": session.pid,
+                    "lab_bench_pid": owned[0]["pid"],
+                    "vite_pid": vite_descendants[0]["pid"],
+                    "binary": binary,
+                }
+                STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+                print("ready")
+                print(f"url: {URL}")
+                print(f"session_pid: {state['session_pid']}")
+                print(f"lab_bench_pid: {state['lab_bench_pid']}")
+                print(f"binary: {state['binary']}")
+                print(f"vite_pid: {state['vite_pid']}")
+                return
+        time.sleep(0.4)
+
+    tail = strip_ansi(LOG_PATH.read_text(encoding="utf-8", errors="replace")).splitlines()[-40:]
+    stop_recorded(state)
+    fail(failure + "\n" + "\n".join(tail))
+
+
+def doctor() -> None:
+    state = read_state()
+    if not state:
+        fail("no verification state. Launch this run before driving it.")
+    session = expect_int(state, "session_pid")
+    bench = expect_int(state, "lab_bench_pid")
+    vite = expect_int(state, "vite_pid")
+    binary = state.get("binary")
+    if not isinstance(binary, str) or not binary:
+        fail("verification state has no binary path")
+    if not alive(session):
+        fail(f"launcher pid {session} is not running")
+    if "tauri" not in full_command(session):
+        fail(f"pid {session} is not the tauri dev launcher")
+    if not alive(bench):
+        fail(f"lab-bench pid {bench} is not running")
+    bench_cmd = resolved_executable(bench)
+    if bench_cmd != str(Path(binary).resolve()):
+        fail(f"lab-bench pid {bench} is {bench_cmd or command_of(bench)}, not the binary this run started")
+    if not binary.startswith(str(ROOT) + os.sep):
+        fail(f"binary is outside this checkout: {binary}")
+    if not is_descendant(bench, session) and bench_cmd != binary:
+        fail(f"lab-bench pid {bench} is not part of this launch")
+    others = [item for item in lab_bench_processes() if item["pid"] != bench]
+    if others:
+        fail(
+            "another lab-bench is running (pid "
+            + ", ".join(str(item["pid"]) for item in others)
+            + "). Refusing to drive a shared desk."
+        )
+    if not alive(vite):
+        fail(f"vite pid {vite} is not running")
+    listeners = port_listeners()
+    if not any(item["pid"] == vite for item in listeners):
+        fail(f"pid {vite} is not listening on port 1420")
+    if not is_descendant(vite, session):
+        fail(f"vite pid {vite} is not a child of this launch")
+    title, title_error = fetch_title()
+    if title != "LabBench":
+        fail(f"http://localhost:1420/ did not serve LabBench ({title_error or title!r})")
+    version = package_version()
+    if version != "0.1.0":
+        fail(f"package.json version is {version}, expected 0.1.0")
+    ipv4 = "open" if ipv4_connects() else "refused"
+    print(f"url: {URL}")
+    print(f"version: {version}")
+    print(f"session_pid: {session}")
+    print(f"lab_bench_pid: {bench}")
+    print(f"binary: {binary}")
+    print(f"vite_pid: {vite}")
+    print(f"ipv4_127: {ipv4}")
+    print("status: worth driving")
+
+
+def cleanup() -> None:
+    if ARTIFACTS == RUN_DIR or RUN_DIR in ARTIFACTS.parents:
+        fail("refusing to clean up because artifacts live inside the run directory", code=2)
+    state = read_state()
+    if state:
+        stop_recorded(state)
+    if RUN_DIR.exists():
+        shutil.rmtree(RUN_DIR)
+    print("stopped")
+    print(f"artifacts: {ARTIFACTS}")
+
+
+def stop_recorded(state: dict) -> None:
+    session = state.get("session_pid")
+    if isinstance(session, int) and alive(session) and "tauri" in full_command(session):
+        try:
+            os.killpg(session, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        deadline = time.time() + 8
+        while time.time() < deadline and alive(session):
+            time.sleep(0.2)
+        if alive(session):
+            try:
+                os.killpg(session, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    binary = state.get("binary")
+    bench = state.get("lab_bench_pid")
+    if (
+        isinstance(binary, str)
+        and isinstance(bench, int)
+        and alive(bench)
+        and resolved_executable(bench) == str(Path(binary).resolve())
+    ):
+        terminate(bench)
+    vite = state.get("vite_pid")
+    if isinstance(vite, int) and alive(vite) and any(item["pid"] == vite for item in port_listeners()):
+        terminate(vite)
+
+
+def terminate(pid: int) -> None:
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.time() + 3
+    while time.time() < deadline and alive(pid):
+        time.sleep(0.1)
+    if alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def read_state() -> dict | None:
+    if not STATE_PATH.exists():
+        return None
+    data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        fail("verification state is not a record")
+    return data
+
+
+def expect_int(state: dict, key: str) -> int:
+    value = state.get(key)
+    if not isinstance(value, int):
+        fail(f"verification state has no {key}")
+    return value
+
+
+def package_version() -> str:
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    version = package.get("version")
+    if not isinstance(version, str):
+        fail("package.json has no version")
+    return version
+
+
+def fetch_title() -> tuple[str | None, str | None]:
+    try:
+        with urllib.request.urlopen(URL, timeout=2) as response:
+            body = response.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        return None, str(error)
+    match = re.search(r"<title>([^<]*)</title>", body)
+    return (match.group(1) if match else ""), None
+
+
+def ipv4_connects() -> bool:
+    probe = socket.socket()
+    probe.settimeout(1)
+    try:
+        probe.connect(("127.0.0.1", 1420))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def running_binary(log_text: str) -> str | None:
+    found = re.findall(r"Running `([^`]*lab-bench)`", log_text)
+    if not found:
+        return None
+    raw = Path(found[-1])
+    if not raw.is_absolute():
+        raw = ROOT / "src-tauri" / raw
+    return str(raw.resolve())
+
+
+def port_listeners() -> list[dict]:
+    result = subprocess.run(
+        ["lsof", "-nP", "-iTCP:1420", "-sTCP:LISTEN", "-Fp"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    listeners = []
+    for line in result.stdout.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            pid = int(line[1:])
+            listeners.append({"pid": pid, "command": command_of(pid)})
+    return listeners
+
+
+def lab_bench_processes() -> list[dict]:
+    found = []
+    for pid, command in process_commands():
+        executable = command.split()[0] if command else ""
+        if executable == "lab-bench" or executable.endswith("/lab-bench"):
+            found.append({"pid": pid, "command": executable})
+    return found
+
+
+def process_commands() -> list[tuple[int, str]]:
+    result = subprocess.run(
+        ["ps", "-ax", "-o", "pid=,command="],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rows = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if not parts or not parts[0].isdigit():
+            continue
+        rows.append((int(parts[0]), parts[1] if len(parts) > 1 else ""))
+    return rows
+
+
+def full_command(pid: int) -> str:
+    for found, command in process_commands():
+        if found == pid:
+            return command
+    return ""
+
+
+def command_of(pid: int) -> str:
+    command = full_command(pid)
+    return command.split()[0] if command else ""
+
+
+def resolved_executable(pid: int) -> str:
+    command = command_of(pid)
+    if not command:
+        return ""
+    raw = Path(command)
+    if raw.is_absolute():
+        return str(raw.resolve())
+    cwd = process_cwd(pid)
+    if cwd is None:
+        return ""
+    return str((cwd / raw).resolve())
+
+
+def process_cwd(pid: int) -> Path | None:
+    result = subprocess.run(
+        ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("n"):
+            return Path(line[1:])
+    return None
+
+
+def parent_map() -> dict[int, int]:
+    result = subprocess.run(
+        ["ps", "-ax", "-o", "pid=,ppid="],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parents: dict[int, int] = {}
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            parents[int(parts[0])] = int(parts[1])
+    return parents
+
+
+def is_descendant(pid: int, root: int) -> bool:
+    parents = parent_map()
+    seen: set[int] = set()
+    current = pid
+    while current and current not in seen:
+        if current == root:
+            return True
+        seen.add(current)
+        current = parents.get(current, 0)
+    return False
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def strip_ansi(text: str) -> str:
+    return ANSI.sub("", text)
+
+
+def fail(message: str, code: int = 1) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+if __name__ == "__main__":
+    main()
