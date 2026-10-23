@@ -124,6 +124,12 @@ describe("series plot", () => {
     expect(drawn.length).toBeGreaterThan(2);
     expect(offTheChord(drawn)).toBeLessThan(1);
     expect(drawn[0].x).toBeLessThan(drawn[drawn.length - 1].x);
+    const markup = new XMLSerializer().serializeToString(svg);
+    expect(markup.match(/data-point/g)).toHaveLength(series.points.length);
+    expect(markup.match(/data-uncertainty="x"/g)).toHaveLength(series.points.length);
+    expect(markup.match(/data-uncertainty="y"/g)).toHaveLength(series.points.length);
+    expect(markup).toContain('data-fit=""');
+    expect(markup).toContain('data-point=""');
   });
 
   it("draws a degree-2 curve through the capacitor points", () => {
@@ -136,5 +142,11 @@ describe("series plot", () => {
     expect(screen.container.querySelector("svg")?.getAttribute("aria-label")).toContain("degree 2");
     expect(path?.getAttribute("d")).toBe(geometry.curve);
     expect(offTheChord(pathPoints(geometry.curve ?? ""))).toBeGreaterThan(8);
+    const markup = new XMLSerializer().serializeToString(screen.container.querySelector("svg")!);
+    expect(markup.match(/data-point/g)).toHaveLength(17);
+    expect(markup.match(/data-uncertainty="x"/g)).toHaveLength(17);
+    expect(markup.match(/data-uncertainty="y"/g)).toHaveLength(17);
+    expect(markup).toContain('data-fit=""');
+    expect(markup).toContain('data-point=""');
   });
 });

@@ -2,6 +2,8 @@
 
 LabBench is a free offline desk app for school and olympiad physics labs. You open a CSV, plot the points, fit a line or a polynomial with uncertainties, and export a PNG and a Markdown file. It replaces paid Vernier and PASCO analysis tools for tables you already exported.
 
+Status: P0 is done. P1 is done. P2 is next.
+
 ## What version 1 does
 
 - Version 1 reads one CSV of measured points.

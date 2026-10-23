@@ -12,10 +12,14 @@ export default function SeriesPlot(props: { series: Series; fit?: Fit | null }) 
   return (
     <svg
       class="plot"
+      xmlns="http://www.w3.org/2000/svg"
+      width={plot().width}
+      height={plot().height}
       viewBox={`0 0 ${plot().width} ${plot().height}`}
       role="img"
       aria-label={label()}
     >
+      <rect width={plot().width} height={plot().height} fill="#ffffff" />
       <line
         x1={plot().axis.left}
         y1={plot().axis.top}
@@ -92,7 +96,7 @@ export default function SeriesPlot(props: { series: Series; fit?: Fit | null }) 
       </text>
       <Show when={plot().curve}>
         {(curve) => (
-          <path data-fit d={curve()} fill="none" stroke="#9a3412" stroke-width="2" />
+          <path data-fit="" d={curve()} fill="none" stroke="#9a3412" stroke-width="2" />
         )}
       </Show>
       <For each={plot().points}>
@@ -150,7 +154,7 @@ export default function SeriesPlot(props: { series: Series; fit?: Fit | null }) 
               stroke="#24557a"
               stroke-width="1.5"
             />
-            <circle data-point cx={point.cx} cy={point.cy} r="4" fill="#1b1e23">
+            <circle data-point="" cx={point.cx} cy={point.cy} r="4" fill="#1b1e23">
               <title>
                 {props.series.x_name}: {formatValue(point.x)} ± {formatValue(point.dx)};{" "}
                 {props.series.y_name}: {formatValue(point.y)} ± {formatValue(point.dy)}

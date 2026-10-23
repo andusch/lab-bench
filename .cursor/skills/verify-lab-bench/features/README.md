@@ -47,4 +47,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Plot both uncertainties](./plot-uncertainties.md) covers the plotted points, both uncertainties, and the absence of a fitted curve.
 - [Fit a polynomial](./fit-polynomial.md) covers degree 1, 2, and 3 and the numbers the desk must show for that fit.
 
-Exporting a PNG and exporting Markdown have no control on the desk, so this map has no journey for them.
+Export PNG and Export Markdown are buttons shown after a fit. This map does not drive those buttons.

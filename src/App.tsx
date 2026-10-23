@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import SeriesPlot from "./SeriesPlot";
 import type { Fit, Series } from "./series";
 import "./App.css";
@@ -15,6 +15,8 @@ function App() {
   const [error, setError] = createSignal("");
   const [opening, setOpening] = createSignal(false);
   const [fitting, setFitting] = createSignal(false);
+  const [exportingPng, setExportingPng] = createSignal(false);
+  const [exportingMarkdown, setExportingMarkdown] = createSignal(false);
 
   async function fitDegree(degree: 1 | 2 | 3) {
     setFitting(true);
@@ -31,6 +33,64 @@ function App() {
       setError(typeof err === "string" ? err : "The fit did not run.");
     } finally {
       setFitting(false);
+    }
+  }
+
+  async function exportPng() {
+    setError("");
+    if (!hasTauriBridge()) {
+      setError("Export PNG runs in the LabBench window.");
+      return;
+    }
+    const svg = document.querySelector("svg.plot");
+    if (!(svg instanceof SVGSVGElement) || !fit()) {
+      setError("Fit a polynomial before exporting a PNG.");
+      return;
+    }
+    const markup = new XMLSerializer().serializeToString(svg);
+    setExportingPng(true);
+    try {
+      const selected = await save({
+        title: "Export PNG",
+        defaultPath: "plot.png",
+        filters: [{ name: "PNG", extensions: ["png"] }],
+      });
+      if (typeof selected !== "string") {
+        return;
+      }
+      await invoke("export_png", { path: selected, svg: markup });
+    } catch (err) {
+      setError(typeof err === "string" ? err : "The PNG was not written.");
+    } finally {
+      setExportingPng(false);
+    }
+  }
+
+  async function exportMarkdown() {
+    setError("");
+    if (!hasTauriBridge()) {
+      setError("Export Markdown runs in the LabBench window.");
+      return;
+    }
+    if (!fit()) {
+      setError("Fit a polynomial before exporting Markdown.");
+      return;
+    }
+    setExportingMarkdown(true);
+    try {
+      const selected = await save({
+        title: "Export Markdown",
+        defaultPath: "fit.md",
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (typeof selected !== "string") {
+        return;
+      }
+      await invoke("export_markdown", { path: selected });
+    } catch (err) {
+      setError(typeof err === "string" ? err : "The Markdown file was not written.");
+    } finally {
+      setExportingMarkdown(false);
     }
   }
 
@@ -118,6 +178,24 @@ function App() {
                       <dd>{formatStat(current().r_squared)}</dd>
                     </div>
                   </dl>
+                  <div class="export-actions">
+                    <button
+                      type="button"
+                      class="secondary"
+                      onClick={() => void exportPng()}
+                      disabled={exportingPng() || exportingMarkdown()}
+                    >
+                      {exportingPng() ? "Exporting…" : "Export PNG"}
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      onClick={() => void exportMarkdown()}
+                      disabled={exportingPng() || exportingMarkdown()}
+                    >
+                      {exportingMarkdown() ? "Exporting…" : "Export Markdown"}
+                    </button>
+                  </div>
                 </div>
               )}
             </Show>
