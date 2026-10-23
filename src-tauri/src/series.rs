@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 mod fit;
+mod markdown;
 
 pub use fit::{Fit, FitError};
 
@@ -108,6 +109,12 @@ impl Desk {
         let fit = fit::fit_series(series, degree)?;
         self.fit = Some(fit);
         Ok(self.fit.clone().expect("fit was just stored"))
+    }
+
+    /// Write the current fit. No fit leaves the chosen path untouched.
+    pub fn write_markdown(&self, path: &Path) -> Result<(), markdown::MarkdownError> {
+        let fit = self.fit.as_ref().ok_or(markdown::MarkdownError::NoFit)?;
+        markdown::write_fit(path, fit)
     }
 }
 
