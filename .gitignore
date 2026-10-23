@@ -1,2 +1,36 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+
+# Frontend build
+dist/
+*.tsbuildinfo
+.vite/
+
+# Rust and Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python bytecode from the verification helper
+__pycache__/
+*.py[cod]
+
+# Verification runs. The skill, feature map, and helper stay tracked.
+.cursor/skills/verify-lab-bench/run/
+.cursor/skills/verify-lab-bench/artifacts/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# OS and editor scratch
+.DS_Store
+Thumbs.db
+*.swp
