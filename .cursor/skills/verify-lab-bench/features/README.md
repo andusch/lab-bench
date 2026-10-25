@@ -45,6 +45,6 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Empty desk](./empty-desk.md) covers the launched desk before any file is chosen.
 - [Open a CSV](./open-csv.md) covers both samples, the column names and point counts, and a file that is not four columns.
 - [Plot both uncertainties](./plot-uncertainties.md) covers the plotted points, both uncertainties, and the absence of a fitted curve.
-- [Fit a polynomial](./fit-polynomial.md) covers degree 1, 2, and 3 and the numbers the desk must show for that fit.
+- [Fit a polynomial](./fit-polynomial.md) covers degree 1, 2, and 3, the numbers the desk must show for that fit, and a degree the loaded series cannot support.
 
 Export PNG and Export Markdown are buttons shown after a fit. This map does not drive those buttons.
