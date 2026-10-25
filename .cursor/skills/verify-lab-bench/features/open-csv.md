@@ -35,3 +35,5 @@ Preconditions:
 - Opening the capacitor sample replaces the Hooke's law series. Capture the Hooke's law proof before the second open.
 - A failed open does not clear a series that is already on the desk. Run `open-reject` and `open-cancel` from `No series.`, not after a successful open.
 - The button reads `Opening…` while the panel is open. The series is visible only after the panel closes.
+- The column names and the table sit below the plot. Scroll `Loaded series` before reading them.
+- The accessibility open action on a file row loads that file. It can report an error after the panel has already closed. Read the desk before treating that error as a failed open.
