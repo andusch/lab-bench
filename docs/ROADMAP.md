@@ -20,7 +20,7 @@ The P1 exit is the desk loop on either sample. The sample loads, the plot shows 
 
 Status: not done
 
-The P2 exit is a package that installs the P1 desk. The package adds no analysis.
+The P2 exit is a package that installs the P1 desk. The package adds no analysis. The tickets are `tasks/P2-01.md`, `tasks/P2-02.md`, `tasks/P2-03.md`, and `tasks/P2-04.md`.
 
 ## P3
 
