@@ -1,0 +1,74 @@
+name: Windows packages
+
+on:
+  push:
+    branches:
+      - cursor/p2-02-windows
+
+jobs:
+  package:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Confirm bundle targets
+        shell: pwsh
+        run: |
+          $cfg = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($cfg.bundle.targets -ne "all") { throw "bundle.targets is $($cfg.bundle.targets)" }
+          Write-Host "bundle.targets all"
+
+      - run: npm ci
+
+      - run: npm run tauri build
+
+      - name: Confirm NSIS and MSI
+        shell: pwsh
+        run: |
+          $nsis = "src-tauri/target/release/bundle/nsis/LabBench_0.1.0_x64-setup.exe"
+          $msi = "src-tauri/target/release/bundle/msi/LabBench_0.1.0_x64_en-US.msi"
+          if (-not (Test-Path $nsis)) { throw "missing $nsis" }
+          if (-not (Test-Path $msi)) { throw "missing $msi" }
+          Get-Item $nsis, $msi | Format-List FullName, Length
+
+      - name: Fit the sample series
+        shell: pwsh
+        working-directory: src-tauri
+        run: cargo test --release -- hookes_law_degree_one_slope_matches_the_sample capacitor_fit_has_no_time_constant
+
+      - name: Install and launch
+        shell: pwsh
+        run: |
+          $built = "src-tauri/target/release/lab-bench.exe"
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $built))
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $pe + 92)
+          if ($subsystem -ne 2) { throw "expected Windows GUI subsystem, got $subsystem" }
+          Write-Host "subsystem windows-gui"
+
+          $nsis = Resolve-Path "src-tauri/target/release/bundle/nsis/LabBench_0.1.0_x64-setup.exe"
+          $install = Start-Process -FilePath $nsis -ArgumentList "/S" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "setup exit $($install.ExitCode)" }
+
+          $exe = Join-Path $env:LOCALAPPDATA "LabBench\lab-bench.exe"
+          if (-not (Test-Path $exe)) {
+            $found = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter lab-bench.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $found) { throw "installed lab-bench.exe not found" }
+            $exe = $found.FullName
+          }
+          Write-Host "installed $exe"
+
+          $app = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          $app.Refresh()
+          if ($app.HasExited) { throw "LabBench exited $($app.ExitCode)" }
+          Write-Host "title=$($app.MainWindowTitle)"
+          Stop-Process -Id $app.Id -Force
+          Write-Host "INSTALL_OK"
