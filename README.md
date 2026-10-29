@@ -24,10 +24,19 @@ The reported uncertainty on a coefficient is the standard error from that fit. T
 - Nonlinear least squares, including Levenberg-Marquardt and named curves such as an exponential.
 - Typst and PDF. The prose export is Markdown.
 - A live serial stream.
-- Packaged installers.
 - A Show HN post, and any other launch announcement.
 
 You can plot `samples/capacitor-discharge.csv` and fit a polynomial through it. Version 1 does not return a time constant.
+
+## Install
+
+A 64-bit Debian or Ubuntu student installs `LabBench_0.1.0_amd64.deb`.
+A 64-bit Windows student runs `LabBench_0.1.0_x64-setup.exe`.
+A Mac student opens the `.dmg` and drags LabBench to Applications. Apple Silicon uses `LabBench_0.1.0_aarch64.dmg`. An Intel Mac uses `LabBench_0.1.0_x64.dmg`.
+
+`LabBench-0.1.0-1.x86_64.rpm` is the Fedora package. `LabBench_0.1.0_amd64.AppImage` runs without installing.
+
+Launch LabBench. It opens the desk.
 
 ## Stack
 
